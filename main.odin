@@ -384,7 +384,7 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
     return
 }
 
-assign :: proc (c : ^Parser) {
+assign :: proc (c : ^Parser) -> bool {
     assignMaybe :: proc (store : $pty/^$ty, value : $vty, maybe : bool) {
         if maybe {
             store := cast(^Maybe(ty))store
@@ -437,17 +437,26 @@ assign :: proc (c : ^Parser) {
             assignMaybe(cast(^[]Special(ty))arg.store, result, arg_isOptional(arg))
         }
 
-        fmt.println("hello")
-
         if arg_doesAllowSpecialValues(arg) { dumpSpecial(arg, src, ty) }
         else                               { dumpValue(arg, src, ty) }
     }
 
+    // TODO: Check for errors that can only be detected at the very end of parsing, such as a required argument missing,
+    // invalid (unfinished) subcommand... Actually that's it probably
+
     for arg in c.arguments {
         if arg.store == nil { continue }
         if (!arg_isList(arg) && is_none(arg.value)) || (arg_isList(arg) && is_none(arg.default) && !arg.provided) {
-            fmt.printfln("goodbye %v", arg)
-            // TODO: set store to {}
+            if arg_isList(arg) {
+                (cast(^Maybe([]u8))arg.store)^ = {}
+            }
+            else if arg_doesAllowSpecialValues(arg) {
+                (cast(^Maybe(Special(u8)))arg.store)^ = {}
+            }
+            else {
+                (cast(^Maybe(u8))arg.store)^ = {}
+            }
+
             continue
         }
 
@@ -475,6 +484,8 @@ assign :: proc (c : ^Parser) {
             }
         }
     }
+
+    return true
 }
 
 
@@ -485,14 +496,14 @@ main :: proc () {
 
     parser := Parser{
         arguments = {
-            { type = u64{},  name = { "--hello" }, store = &hello }, 
+            { type = u64{},  name = { "--hello" }, required = true, store = &hello }, 
             { type = Flag{}, name = { "--help" } }, 
             { type = []u64{}, name = { "-l" }, store = &l, default = Default(DefaultList({ Value(u64(1)), Value(u64(2)), Value(u64(3)) })) },
         }
     }
 
     reset(&parser)
-    ok := parse(&parser, { "./program", "--hello", "53", "--help", "-l", "5" })
+    ok := parse(&parser, { "./program", "-l", "5" })
     fmt.println(ok)
     assign(&parser)
 
