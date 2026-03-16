@@ -43,200 +43,48 @@ program -- irrelevant args, possibly used for something else by the program
 
 */
 
+// TODO: it might be useful to set min and max length (possibly unbounded) for a list argument
 
+// TODO: we might want an argument type that allows ONLY special values (which is essentially a string type)
 
-
-
-Flag :: distinct u64
-
-Value :: union {
-    Flag,   []Flag,
-    bool,   []bool,
-    i64,    []i64,
-    u64,    []u64,
-    f64,    []f64,
-    string, []string,
-}
-
-SpecialValue :: distinct string
-
-Special :: union($ty : typeid) {
-    ty,
-    SpecialValue,
-}
-
-DefaultValue :: distinct Special(Value)
-DefaultList  :: distinct []Special(Value)
-
-// NOTE: using Maybe(Default) makes sense semantically, but because odin is retarded it is redundant
-// as every union has an implicit nil variant. In fact, due to a compiler bug this redundancy directly
-// impacts the user, so we should probably use Default.nil instead of Maybe(Default).nil
-Default :: union {
-    DefaultValue,
-    DefaultList,
-}
+// TODO: --verbatim flag that allows for positional arguments and argument values starting with '-' (including "--")
+// (I'm actually not sure if "verbatim" is the right word to use, but I like how it sounds)
+// also it should force the value to NOT be a special value, i.e. if we have a string argument with a special value
+// "stdout", providing --verbatim stdout will make it a regular string value
+VERBATIM :: "--verbatim"
 
 
 
 
 
-/*
-
-# Argument <-> store type
-
-{ type = type, required = false, special = nil, default = nil } <-> Maybe(type)
-
-{ type = type, required = false, special = { ... }, default = nil } <-> Maybe(Special(type))
-
-{ type = type, required = true, special = nil, default = nil } <-> type
-{ type = type, required = false, special = nil, default = ... } <-> type
-
-{ type = type, required = true, special = { ... }, default = nil } <-> Special(type)
-{ type = type, required = false, special = { ... }, default = ... } <-> Special(type)
 
 
 
-{ type = []type, required = false, special = nil, default = nil } <-> Maybe([]type)
-
-{ type = []type, required = false, special = { ... }, default = nil } <-> Maybe([]Special(type)) 
-
-{ type = []type, required = true, special = nil, default = nil } <-> []type
-{ type = []type, required = false, special = nil, default = { ... } } <-> []type
-
-{ type = []type, required = true, special = { ... }, default = nil } <-> []Special(type)
-{ type = []type, required = false, special = { ... }, default = { ... } } <-> []Special(type)
 
 
 
-# Essentially this boils down to:
-
-If required == false && default == nil -> Maybe
-If special != nil -> Special
-If list and special -> []Special
-
-*/
-
-Argument :: struct {
-    // Never changing
-    type     : Value,
-    name     : []string,
-    position : Maybe(int),
-    required : bool,
-    special  : []string,
-    default  : Maybe(Default),
-    sub      : []string,
-
-    store    : rawptr,
-
-
-    // Reset per distinct parse
-    provided : bool, // NOTE: false if default
-    value    : Maybe(Special(Value)),
-    array    : [dynamic]Special(Value),
-}
-
-verify_arg :: proc (arg : Argument) -> bool {
-    if arg.required && is_just(arg.default) { return false }
-    if is_none(arg.position) && len(arg.name) == 0 { return false }
-
-    // TODO: compare type of arg.type and arg.default
-
-    return true
-}
 
 Parser :: struct {
+    // Configuration
     arguments : []Argument,
     subcommands : [][]string,
+
+    // Runtime (mostly)
+    strings : [dynamic]string,
+    index : int,
+    errors : [dynamic]Error,
 
     pos : int,
     subcommand : [dynamic]string,
 }
 
-take_string :: proc (strings : []string) -> (s : string, rest : []string, ok : bool = false) {
-    if len(strings) == 0 { return }
-    return strings[0], strings[1:], true
+parser_pushError :: proc (p : ^Parser, e : Error) {
+    append(&p.errors, e)
 }
 
 
 
-is_just :: proc (v : Maybe($ty)) -> bool {
-    _, ok := v.?
-    return ok
-}
 
-is_none :: proc (v : Maybe($ty)) -> bool {
-    _, ok := v.?
-    return !ok
-}
-
-
-
-mkValue :: proc ($ty : typeid, value : ty) -> Maybe(Special(Value)) {
-    av : Value = value
-    asv : Special(Value) = av
-    masv : Maybe(Special(Value)) = asv
-    return masv
-}
-
-mkValueS :: proc ($ty : typeid, value : ty) -> Special(Value) {
-    av : Value = value
-    asv : Special(Value) = av
-    return asv
-}
-
-
-
-arg_getValue :: proc (arg : ^Argument, $ty : typeid) -> (ty, bool) {
-    // NOTE: Assuming called already typechecked
-    if is_just(arg.value) { return arg.value.(ty), true }
-    return {}, false
-}
-
-arg_getValueOrAssign :: proc (arg : ^Argument, $ty : typeid, value : ty) -> (ty, bool) {
-    if is_just(arg.value) { return arg.value.?.(Value).(ty), true }
-    else {
-        arg.value = mkValue(ty, value)
-        return value, false
-    }
-}
-
-arg_isOptional :: proc (arg : Argument) -> bool {
-    return !arg.required && is_none(arg.default)
-}
-
-
-
-arg_isList :: proc (arg : Argument, valueForFlagArray : bool = true) -> bool {
-    switch _ in arg.type {
-    case Flag: return false
-    case []Flag: return valueForFlagArray
-    case bool: return false
-    case []bool: return true
-    case i64: return false
-    case []i64: return true
-    case u64: return false
-    case []u64: return true
-    case f64: return false
-    case []f64: return true
-    case string: return false
-    case []string: return true
-    case: panic("bad")
-    }
-}
-
-arg_doesAllowSpecialValues :: proc (arg : Argument) -> bool {
-    return len(arg.special) > 0
-}
-
-arg_isPositionalAt :: proc (arg : Argument, pos : int) -> (ok : bool = false) {
-    v := arg.position.? or_return
-    return pos == v
-}
-
-arg_isType :: proc (arg : Argument, $ty : typeid) -> bool {
-    _, ok := arg.type.(ty)
-    return ok
-}
 
 parseSingleArgumentType :: proc (arg : ^Argument, s : string, $ty : typeid) -> (value : ty, ok : bool = false) {
     when ty == bool {
@@ -267,7 +115,7 @@ parseSingleArgumentType :: proc (arg : ^Argument, s : string, $ty : typeid) -> (
     return
 }
 
-parseSingleArgument :: proc (arg : ^Argument, s : string) -> (ok : bool = false) {
+parseSingleArgument :: proc (arg : ^Argument, s : string, verbatim : bool) -> (ok : bool = false) {
     if !arg_isList(arg^) && arg.provided { return }
 
     for sv in arg.special {
@@ -314,6 +162,15 @@ parseSingleArgument :: proc (arg : ^Argument, s : string) -> (ok : bool = false)
 
 
 
+verify_arg :: proc (arg : Argument) -> bool {
+    if arg.required && is_just(arg.default) { return false }
+    if is_none(arg.position) && len(arg.name) == 0 { return false }
+
+    // TODO: compare type of arg.type and arg.default
+
+    return true
+}
+
 verify :: proc (c : ^Parser) -> bool {
     for arg in c.arguments {
         verify_arg(arg) or_return
@@ -330,21 +187,26 @@ reset :: proc (c : ^Parser) {
         a.value = {}
         a.provided = false
         resize(&a.array, 0)
+        a.beginPos = -1
+        a.finalPos = -1
     }
 }
 
 // TODO: actual errors instead of a boolean (since this is actually user-facing)
 parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok : bool = false) {
     strings := strings
-    if skipFirst { strings = strings[1:] }
+    if skipFirst { _, strings = str_pop(c, strings) or_return }
 
     s : string
     next : bool = true
 
     loop: for true {
-        if s, strings, next = take_string(strings); !next { break }
+        s, strings = str_pop(c, strings) or_break loop
+        verbatim := s == VERBATIM
 
         for sc in c.subcommands {
+            if verbatim { break }
+
             if !slice.has_prefix(sc, c.subcommand[:]) { continue }
             index := len(c.subcommand)
 
@@ -359,28 +221,75 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
             if !slice.has_prefix(c.subcommand[:], arg.sub) { continue }
 
             positional := arg_isPositionalAt(arg, c.pos)
-            named      := slice.contains(arg.name, s)
+            named      := slice.contains(arg.name, s) && !verbatim
 
             if !positional && !named { continue }
+
+            if arg.beginPos == -1 { arg.beginPos = c.pos }
+            arg.finalPos = c.pos
 
             if positional {
                 c.pos += 1
             }
-            else if named {
+            else if named /* && !verbatim */ {
                 if !arg_isType(arg, Flag) {
-                    s, strings = take_string(strings) or_return
+                    ok : bool
+                    s, strings, ok = str_pop(c, strings)
+
+                    if !ok {
+                        parser_pushError(c, Error_ArgumentMissingValue{ c.index - 1, &arg })
+                        return
+                    }
+
+                    verbatim = (s == VERBATIM)
                 }
             }
 
-            parseSingleArgument(&arg, s) or_return
+            if verbatim {
+                ok : bool
+                s, strings, ok = str_pop(c, strings)
+                if !ok {
+                    parser_pushError(c, Error_VerbatimWithoutValue{ c.index - 1 })
+                    return
+                }
+            }
+
+            if str_isArgument(s) && !verbatim {
+                parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index - 1, s })
+            }
+
+            parseSingleArgument(&arg, s, verbatim) or_return
             continue loop
         }
 
-        ok = false
-        return
+
+
+        // Couldn't find fitting argument/subcommand
+        if str_isArgument(s) {
+            parser_pushError(c, Error_UnrecognizedArgument{ c.index - 1, s })
+
+            s = str_peek(c, strings) or_return
+            if s == VERBATIM {
+                _, strings = str_pop(c, strings) or_return
+                _, strings = str_pop(c, strings) or_return
+            }
+            else if str_isArgument(s) {
+
+            }
+            else {
+                _, strings = str_pop(c, strings) or_return
+            }
+        }
+        else {
+            // TODO: there should be some heuristic to determine whether the user
+            // mistakenly added a positional argument, or used a non-existent subcommand.
+            // In fact the latter is likely much more common
+
+            parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
+        }
     }
     
-    ok = true
+    ok = (len(c.errors) == 0)
     return
 }
 
