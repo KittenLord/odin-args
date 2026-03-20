@@ -85,8 +85,17 @@ parser_pushError :: proc (p : ^Parser, e : Error) {
 
 
 
+parseSingleArgumentType :: proc (p : ^Parser, arg : ^Argument, s : string, $ty : typeid) -> (value : ty, ok : bool = false) {
+    defer if !ok {
+        type := determineType(s)
+        if arg_doesAllowSpecialValues(arg^) && is_type(string, type) {
+            parser_pushError(p, Error_UnrecognizedSpecialValue{ p.index - 1, arg, s })
+        }
+        else {
+            parser_pushError(p, Error_ArgumentMismatchedType{ p.index - 1, arg, s })
+        }
+    }
 
-parseSingleArgumentType :: proc (arg : ^Argument, s : string, $ty : typeid) -> (value : ty, ok : bool = false) {
     when ty == bool {
         if      s == "true"  || s == "0" { value = true }
         else if s == "false" || s == "0" { value = false }
@@ -115,10 +124,15 @@ parseSingleArgumentType :: proc (arg : ^Argument, s : string, $ty : typeid) -> (
     return
 }
 
-parseSingleArgument :: proc (arg : ^Argument, s : string, verbatim : bool) -> (ok : bool = false) {
-    if !arg_isList(arg^) && arg.provided { return }
+parseSingleArgument :: proc (p : ^Parser, arg : ^Argument, s : string, verbatim : bool) -> (ok : bool = false) {
+    if !arg_isList(arg^) && arg.provided {
+        parser_pushError(p, Error_ArgumentRepeat{ p.index - 1, arg })
+        return
+    }
 
     for sv in arg.special {
+        if verbatim { break }
+
         if sv == s {
             v := SpecialValue(s)
 
@@ -140,16 +154,16 @@ parseSingleArgument :: proc (arg : ^Argument, s : string, verbatim : bool) -> (o
         f, _ := arg_getValueOrAssign(arg, Flag, 0)
         f += 1
         arg.value = mkValue(Flag, f)
-    case bool:      arg.value = mkValue(bool, parseSingleArgumentType(arg, s, bool) or_return)
-    case i64:       arg.value = mkValue(i64, parseSingleArgumentType(arg, s, i64) or_return)
-    case u64:       arg.value = mkValue(u64, parseSingleArgumentType(arg, s, u64) or_return)
-    case f64:       arg.value = mkValue(f64, parseSingleArgumentType(arg, s, f64) or_return)
-    case string:    arg.value = mkValue(string, parseSingleArgumentType(arg, s, string) or_return)
-    case []bool:    append(&arg.array, mkValueS(bool, parseSingleArgumentType(arg, s, bool) or_return))
-    case []i64:     append(&arg.array, mkValueS(i64, parseSingleArgumentType(arg, s, i64) or_return))
-    case []u64:     append(&arg.array, mkValueS(u64, parseSingleArgumentType(arg, s, u64) or_return))
-    case []f64:     append(&arg.array, mkValueS(f64, parseSingleArgumentType(arg, s, f64) or_return))
-    case []string:  append(&arg.array, mkValueS(string, parseSingleArgumentType(arg, s, string) or_return))
+    case bool:      arg.value = mkValue(bool, parseSingleArgumentType(p, arg, s, bool) or_return)
+    case i64:       arg.value = mkValue(i64, parseSingleArgumentType(p, arg, s, i64) or_return)
+    case u64:       arg.value = mkValue(u64, parseSingleArgumentType(p, arg, s, u64) or_return)
+    case f64:       arg.value = mkValue(f64, parseSingleArgumentType(p, arg, s, f64) or_return)
+    case string:    arg.value = mkValue(string, parseSingleArgumentType(p, arg, s, string) or_return)
+    case []bool:    append(&arg.array, mkValueS(bool, parseSingleArgumentType(p, arg, s, bool) or_return))
+    case []i64:     append(&arg.array, mkValueS(i64, parseSingleArgumentType(p, arg, s, i64) or_return))
+    case []u64:     append(&arg.array, mkValueS(u64, parseSingleArgumentType(p, arg, s, u64) or_return))
+    case []f64:     append(&arg.array, mkValueS(f64, parseSingleArgumentType(p, arg, s, f64) or_return))
+    case []string:  append(&arg.array, mkValueS(string, parseSingleArgumentType(p, arg, s, string) or_return))
     case: panic("bad")
     }
 
@@ -221,7 +235,7 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
             if !slice.has_prefix(c.subcommand[:], arg.sub) { continue }
 
             positional := arg_isPositionalAt(arg, c.pos)
-            named      := slice.contains(arg.name, s) && !verbatim
+            named      := str_isArgument(s) && slice.contains(arg.name, s) && !verbatim
 
             if !positional && !named { continue }
 
@@ -258,14 +272,14 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
                 parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index - 1, s })
             }
 
-            parseSingleArgument(&arg, s, verbatim) or_return
+            _ = parseSingleArgument(c, &arg, s, verbatim)
             continue loop
         }
 
 
 
         // Couldn't find fitting argument/subcommand
-        if str_isArgument(s) {
+        if str_isArgument(s) && !verbatim {
             parser_pushError(c, Error_UnrecognizedArgument{ c.index - 1, s })
 
             s = str_peek(c, strings) or_return
@@ -278,6 +292,16 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
             }
             else {
                 _, strings = str_pop(c, strings) or_return
+            }
+        }
+        else if verbatim {
+            n, ok := str_peek(c, strings)
+            if ok {
+                s, strings = str_pop(c, strings) or_return
+                parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
+            }
+            else {
+                parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
             }
         }
         else {
@@ -412,8 +436,9 @@ main :: proc () {
     }
 
     reset(&parser)
-    ok := parse(&parser, { "./program", "-l", "5" })
+    ok := parse(&parser, { "./program", "--verbatim", "5" })
     fmt.println(ok)
+    fmt.println(parser.errors)
     assign(&parser)
 
 

@@ -35,15 +35,15 @@ Error_RequiredArgumentMissing :: struct {
     argument : ^Argument,
 }
 
-Error_ArgumentRepeat :: struct {
+Error_ArgumentRepeat :: struct { //
     pos : int,
     argument : ^Argument,
 }
 
-Error_ArgumentMismatchedType :: struct {
+Error_ArgumentMismatchedType :: struct { //
     pos : int,
     argument : ^Argument,
-    receivedValue : Value,
+    receivedValue : string,
 }
 
 Error_UnrecognizedSubcommand :: struct {
@@ -52,7 +52,7 @@ Error_UnrecognizedSubcommand :: struct {
     unfinished : bool,
 }
 
-Error_UnrecognizedSpecialValue :: struct {
+Error_UnrecognizedSpecialValue :: struct { //
     pos : int,
     argument : ^Argument,
     specialValue : string,
