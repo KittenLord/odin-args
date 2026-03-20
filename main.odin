@@ -117,6 +117,12 @@ parser_lastTokenHasType :: proc (p : ^Parser) -> bool {
     return p.tokens[len(p.tokens) - 1].type != nil
 }
 
+parser_resetDraw :: proc (p : ^Parser) {
+    for &token in p.tokens {
+        token.draw = .None
+    }
+}
+
 
 
 parseSingleArgumentType :: proc (p : ^Parser, arg : ^Argument, s : string, $ty : typeid) -> (value : ty, ok : bool = false) {
@@ -285,8 +291,13 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
 
             if !positional && !named { continue }
 
-            if arg.beginPos == -1 { arg.beginPos = c.pos }
-            arg.finalPos = c.pos
+            argPos := c.index - 1
+            if verbatim && positional { argPos += 1 }
+
+            if !(verbatim && positional) {
+                if arg.beginPos == -1 { arg.beginPos = argPos }
+                arg.finalPos = argPos
+            }
 
             if positional {
                 c.pos += 1
@@ -309,7 +320,7 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
 
                     if s != VERBATIM && str_isArgument(s) {
                         // NOTE: we assume that user forgor argument
-                        parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index - 1, s })
+                        parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index, s })
                         continue loop
                     }
 
@@ -332,7 +343,10 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
                 }
             }
 
-            parser_setLastToken(c, .Value)
+            if arg.beginPos == -1 { arg.beginPos = argPos }
+            arg.finalPos = argPos
+
+            if !parser_lastTokenHasType(c) { parser_setLastToken(c, .Value) }
             if positional { parser_setLastToken(c, .PositionalValue) }
 
             _ = parseSingleArgument(c, &arg, s, verbatim)
@@ -499,21 +513,23 @@ main :: proc () {
 
     parser := Parser{
         arguments = {
-            { type = u64{},   name = { "--hello" }, required = true, store = &hello }, 
+            { type = u64{},   name = { "--hello" }, special = { "null" }, required = true, store = &hello }, 
             { type = Flag{},  name = { "--help" } }, 
             { type = []u64{}, name = { "-l" }, store = &l, default = Default(DefaultList({ Value(u64(1)), Value(u64(2)), Value(u64(3)) })) },
         }
     }
 
     reset(&parser)
-    ok := parse(&parser, { "./program", "--verbatim", "5" })
-    fmt.println(ok)
-    fmt.println(parser.errors)
+    ok := parse(&parser, { "./program", "--hello", "5", "--hello", "5", "-l" })
+    // fmt.println(ok)
+    // fmt.println(parser.errors)
     assign(&parser)
 
 
-    fmt.println(l)
+    // fmt.println(l)
     fmt.println(parser.tokens[:])
 
-    printTokens(os.to_writer(os.stdout), parser.tokens[:])
+    printErrors(os.to_writer(os.stdout), &parser)
+
+    // printTokens(os.to_writer(os.stdout), parser.tokens[:])
 }
