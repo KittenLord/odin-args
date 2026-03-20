@@ -3,6 +3,7 @@ package args
 import "core:fmt"
 import "core:slice"
 import "core:strconv"
+import "core:os"
 
 
 
@@ -70,7 +71,7 @@ Parser :: struct {
     subcommands : [][]string,
 
     // Runtime (mostly)
-    strings : [dynamic]string,
+    tokens : [dynamic]Token,
     index : int,
     errors : [dynamic]Error,
 
@@ -78,10 +79,43 @@ Parser :: struct {
     subcommand : [dynamic]string,
 }
 
+TokenDrawType :: enum {
+    None,
+
+    Error, 
+    Highlighted
+}
+
+TokenType :: enum {
+    Value,
+    PositionalValue,
+    Flag,
+    Verbatim,
+    Subcommand,
+    DoubleDash,
+
+    ProgramName,
+}
+
+Token :: struct {
+    type : TokenType,
+    draw : TokenDrawType,
+    value : string,
+}
+
 parser_pushError :: proc (p : ^Parser, e : Error) {
     append(&p.errors, e)
 }
 
+parser_setLastToken :: proc (p : ^Parser, type : TokenType) {
+    if len(p.tokens) <= 0 { return }
+    p.tokens[len(p.tokens) - 1].type = type
+}
+
+parser_lastTokenHasType :: proc (p : ^Parser) -> bool {
+    if len(p.tokens) <= 0 { return true }
+    return p.tokens[len(p.tokens) - 1].type != nil
+}
 
 
 
@@ -209,7 +243,10 @@ reset :: proc (c : ^Parser) {
 // TODO: actual errors instead of a boolean (since this is actually user-facing)
 parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok : bool = false) {
     strings := strings
-    if skipFirst { _, strings = str_pop(c, strings) or_return }
+    if skipFirst {
+        _, strings = str_pop(c, strings) or_return
+        parser_setLastToken(c, .ProgramName)
+    }
 
     s : string
     next : bool = true
@@ -217,6 +254,13 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
     loop: for true {
         s, strings = str_pop(c, strings) or_break loop
         verbatim := s == VERBATIM
+
+        if s == VERBATIM {
+            parser_setLastToken(c, .Verbatim)
+        }
+        else if str_isArgument(s) {
+            parser_setLastToken(c, .Flag)
+        }
 
         for sc in c.subcommands {
             if verbatim { break }
@@ -227,6 +271,8 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
             if index >= len(sc) || sc[index] != s { continue }
 
             append(&c.subcommand, s)
+
+            parser_setLastToken(c, .Subcommand)
 
             continue loop
         }
@@ -244,18 +290,36 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
 
             if positional {
                 c.pos += 1
+
+                if !verbatim {
+                    parser_setLastToken(c, .PositionalValue)
+                }
             }
             else if named /* && !verbatim */ {
+                parser_setLastToken(c, .Flag)
+
                 if !arg_isType(arg, Flag) {
                     ok : bool
-                    s, strings, ok = str_pop(c, strings)
+                    s, ok = str_peek(c, strings)
 
                     if !ok {
                         parser_pushError(c, Error_ArgumentMissingValue{ c.index - 1, &arg })
                         return
                     }
 
+                    if s != VERBATIM && str_isArgument(s) {
+                        // NOTE: we assume that user forgor argument
+                        parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index - 1, s })
+                        continue loop
+                    }
+
+                    s, strings, ok = str_pop(c, strings)
+
                     verbatim = (s == VERBATIM)
+
+                    if s == VERBATIM {
+                        parser_setLastToken(c, .Verbatim)
+                    }
                 }
             }
 
@@ -268,11 +332,11 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
                 }
             }
 
-            if str_isArgument(s) && !verbatim {
-                parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index - 1, s })
-            }
+            parser_setLastToken(c, .Value)
+            if positional { parser_setLastToken(c, .PositionalValue) }
 
             _ = parseSingleArgument(c, &arg, s, verbatim)
+
             continue loop
         }
 
@@ -285,23 +349,28 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
             s = str_peek(c, strings) or_return
             if s == VERBATIM {
                 _, strings = str_pop(c, strings) or_return
+                parser_setLastToken(c, .Verbatim)
                 _, strings = str_pop(c, strings) or_return
+                parser_setLastToken(c, .Value)
             }
             else if str_isArgument(s) {
 
             }
             else {
                 _, strings = str_pop(c, strings) or_return
+                parser_setLastToken(c, .Value)
             }
         }
         else if verbatim {
             n, ok := str_peek(c, strings)
             if ok {
                 s, strings = str_pop(c, strings) or_return
+                parser_setLastToken(c, .PositionalValue)
                 parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
             }
             else {
-                parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
+                // parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
+                parser_pushError(c, Error_VerbatimWithoutValue{ c.index - 1 })
             }
         }
         else {
@@ -310,6 +379,7 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
             // In fact the latter is likely much more common
 
             parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
+            parser_setLastToken(c, .PositionalValue)
         }
     }
     
@@ -429,8 +499,8 @@ main :: proc () {
 
     parser := Parser{
         arguments = {
-            { type = u64{},  name = { "--hello" }, required = true, store = &hello }, 
-            { type = Flag{}, name = { "--help" } }, 
+            { type = u64{},   name = { "--hello" }, required = true, store = &hello }, 
+            { type = Flag{},  name = { "--help" } }, 
             { type = []u64{}, name = { "-l" }, store = &l, default = Default(DefaultList({ Value(u64(1)), Value(u64(2)), Value(u64(3)) })) },
         }
     }
@@ -442,7 +512,8 @@ main :: proc () {
     assign(&parser)
 
 
-
-
     fmt.println(l)
+    fmt.println(parser.tokens[:])
+
+    printTokens(os.to_writer(os.stdout), parser.tokens[:])
 }

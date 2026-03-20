@@ -8,7 +8,7 @@ import "core:strconv"
 str_pop :: proc (p : ^Parser, strings : []string) -> (s : string, rest : []string, ok : bool = false) {
     if len(strings) == 0 { return }
     p.index += 1
-    append(&p.strings, strings[0])
+    append(&p.tokens, Token{ type = {}, value = strings[0] })
     return strings[0], strings[1:], true
 }
 
