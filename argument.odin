@@ -151,3 +151,11 @@ arg_isType :: proc (arg : Argument, $ty : typeid) -> bool {
 str_isArgument :: proc (s : string) -> bool {
     return len(s) > 0 && s[0] == '-'
 }
+        
+arg_fitsSubcommand :: proc (arg : Argument, subcommand : []string) -> bool {
+    return slice.has_prefix(subcommand, arg.sub)
+}
+
+arg_hasDefault :: proc (arg : Argument) -> bool {
+    return is_just(arg.default)
+}

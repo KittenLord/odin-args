@@ -123,6 +123,10 @@ parser_resetDraw :: proc (p : ^Parser) {
     }
 }
 
+parser_hasErrors :: proc (p : ^Parser) -> bool {
+    return len(p.errors) > 0
+}
+
 
 
 parseSingleArgumentType :: proc (p : ^Parser, arg : ^Argument, s : string, $ty : typeid) -> (value : ty, ok : bool = false) {
@@ -284,7 +288,7 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
         }
 
         for &arg in c.arguments {
-            if !slice.has_prefix(c.subcommand[:], arg.sub) { continue }
+            if !arg_fitsSubcommand(arg, c.subcommand[:]) { continue }
 
             positional := arg_isPositionalAt(arg, c.pos)
             named      := str_isArgument(s) && slice.contains(arg.name, s) && !verbatim
@@ -461,6 +465,20 @@ assign :: proc (c : ^Parser) -> bool {
     // TODO: Check for errors that can only be detected at the very end of parsing, such as a required argument missing,
     // invalid (unfinished) subcommand... Actually that's it probably
 
+    for &arg in c.arguments {
+        if !arg.required { continue }
+        if !arg_fitsSubcommand(arg, c.subcommand[:]) { continue }
+
+        if !arg.provided && !arg_hasDefault(arg) {
+            parser_pushError(c, Error_RequiredArgumentMissing{ &arg })
+        }
+
+        continue
+    }
+
+    if parser_hasErrors(c) { return false }
+
+
     for arg in c.arguments {
         if arg.store == nil { continue }
         if (!arg_isList(arg) && is_none(arg.value)) || (arg_isList(arg) && is_none(arg.default) && !arg.provided) {
@@ -521,13 +539,14 @@ main :: proc () {
 
     reset(&parser)
     ok := parse(&parser, { "./program", "--hello", "5", "--hello", "5", "-l" })
+    // ok := parse(&parser, os.args)
     // fmt.println(ok)
     // fmt.println(parser.errors)
     assign(&parser)
 
 
     // fmt.println(l)
-    fmt.println(parser.tokens[:])
+    // fmt.println(parser.tokens[:])
 
     printErrors(os.to_writer(os.stdout), &parser)
 

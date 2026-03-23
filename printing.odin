@@ -81,6 +81,24 @@ printType :: proc (w : io.Stream, t : Value) {
     }
 }
 
+printArgType :: proc (w : io.Stream, arg : Argument) {
+    printType(w, arg.type)
+    if arg_doesAllowSpecialValues(arg) {
+        fmt.wprintf(w, " or %v", arg.special)
+    }
+}
+
+printArgName :: proc (w : io.Stream, arg : Argument) {
+    if len(arg.name) != 0 {
+        io.write_string(w, arg.name[0])
+    }
+    else {
+        fmt.wprintf(w, "<%v>", arg.position)
+    }
+}
+
+
+// TODO: these should be more modular (i.e. little to no formatting assumed for the most part)
 printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
     defer parser_resetDraw(p)
 
@@ -92,21 +110,28 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
 
         printTokens(w, p.tokens[:])
     case Error_RequiredArgumentMissing:
-        panic("UNIMPLEMENTED")
+        fmt.wprint(w, "ERROR: Required argument \"")
+        printArgName(w, e.argument^)
+        fmt.wprint(w, "\" has not been provided a value\n")
+
+        fmt.wprintf(w, "\tExpected: ")
+            printArgType(w, e.argument^)
     case Error_ArgumentRepeat:
-        fmt.wprintfln(w, "ERROR: Argument \"%v\" is repeated multiple times", e.argument.name[0])
+        fmt.wprint(w, "ERROR: Argument \"")
+        printArgName(w, e.argument^)
+        fmt.wprint(w, "\" is repeated multiple times\n")
 
         p.tokens[e.pos].draw = .Error
         p.tokens[e.argument.beginPos].draw = .Highlighted
         
         printTokens(w, p.tokens[:])
     case Error_ArgumentMismatchedType:
-        fmt.wprintfln(w, "ERROR: Argument \"%v\" has been provided an invalid value", e.argument.name[0])
+        fmt.wprint(w, "ERROR: Argument \"")
+        printArgName(w, e.argument^)
+        fmt.wprint(w, "\" has been provided an invalid value\n")
+
         fmt.wprintf(w, "\tExpected: ")
-            printType(w, e.argument.type)
-            if arg_doesAllowSpecialValues(e.argument^) {
-                fmt.wprintf(w, " or %v", e.argument.special)
-            }
+            printArgType(w, e.argument^)
             io.write_rune(w, '\n')
         fmt.wprintf(w, "\tReceived: ")
             printType(w, determineType(e.receivedValue))
@@ -118,12 +143,12 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
     case Error_UnrecognizedSubcommand:
         panic("UNIMPLEMENTED")
     case Error_UnrecognizedSpecialValue:
-        fmt.wprintfln(w, "ERROR: Argument \"%v\" has been provided an unrecognized special value \"%v\"", e.argument.name[0], e.specialValue)
+        fmt.wprint(w, "ERROR: Argument \"")
+        printArgName(w, e.argument^)
+        fmt.wprintfln(w, "\" has been provided an unrecognized special value \"%v\"", e.specialValue)
+
         fmt.wprintf(w, "\tExpected: ")
-            printType(w, e.argument.type)
-            if arg_doesAllowSpecialValues(e.argument^) {
-                fmt.wprintf(w, " or %v", e.argument.special)
-            }
+            printArgType(w, e.argument^)
             io.write_rune(w, '\n')
         fmt.wprintf(w, "\tReceived: ")
             printType(w, determineType(e.specialValue))
@@ -140,7 +165,9 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
 
         printTokens(w, p.tokens[:])
     case Error_ArgumentMissingValue:
-        fmt.wprintfln(w, "ERROR: Argument \"%v\" has not been provided a value", e.argument.name[0])
+        fmt.wprint(w, "ERROR: Argument \"")
+        printArgType(w, e.argument^)
+        fmt.wprint(w, "\" has not been provided a value\n")
 
         p.tokens[e.pos].draw = .Highlighted
 
