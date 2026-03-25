@@ -17,42 +17,27 @@ COLOR_HIGHLIGHTED :: "\e[1;4;33m"
 COLOR_RESET :: "\e[0m"
 
 printToken :: proc (w : io.Stream, token : Token) {
-    if token.draw != .None {
-        switch token.draw {
-        case .None:
-        case .Error:
-            ty := determineType(token.value)
-            quote := ((token.type == .Value || token.type == .PositionalValue) && is_type(string, ty)) ? "\"" : ""
-            fmt.wprintf(w, COLOR_ERROR + "%v%v%v" + COLOR_RESET, quote, token.value, quote)
-        case .Highlighted:
-            ty := determineType(token.value)
-            quote := ((token.type == .Value || token.type == .PositionalValue) && is_type(string, ty)) ? "\"" : ""
-            fmt.wprintf(w, COLOR_HIGHLIGHTED + "%v%v%v" + COLOR_RESET, quote, token.value, quote)
-        }
-
-        return
-    }
+    color := ""
+    quote := false
 
     switch token.type {
-    case .Value:
-        ty := determineType(token.value)
-        quote := is_type(string, ty) ? "\"" : ""
-        fmt.wprintf(w, COLOR_VALUE + "%v%v%v" + COLOR_RESET, quote, token.value, quote)
-    case .PositionalValue:
-        ty := determineType(token.value)
-        quote := is_type(string, ty) ? "\"" : ""
-        fmt.wprintf(w, COLOR_POSITIONALVALUE + "%v%v%v" + COLOR_RESET, quote, token.value, quote)
-    case .Flag:
-        fmt.wprintf(w, COLOR_FLAG + "%v" + COLOR_RESET, token.value)
-    case .Verbatim:
-        fmt.wprintf(w, COLOR_VERBATIM + "%v" + COLOR_RESET, token.value)
-    case .Subcommand:
-        fmt.wprintf(w, COLOR_SUBCOMMAND + "%v" + COLOR_RESET, token.value)
-    case .DoubleDash:
-        fmt.wprintf(w, COLOR_DOUBLEDASH + "%v" + COLOR_RESET, token.value)
-    case .ProgramName:
-        fmt.wprintf(w, COLOR_PROGRAMNAME + "%v" + COLOR_RESET, token.value)
+    case .Value:                color = COLOR_VALUE;            quote = is_type(string, determineType(token.value))
+    case .PositionalValue:      color = COLOR_POSITIONALVALUE;  quote = is_type(string, determineType(token.value))
+    case .Flag:                 color = COLOR_FLAG
+    case .Verbatim:             color = COLOR_VERBATIM
+    case .Subcommand:           color = COLOR_SUBCOMMAND
+    case .DoubleDash:           color = COLOR_DOUBLEDASH
+    case .ProgramName:          color = COLOR_PROGRAMNAME
     }
+
+    switch token.draw {
+    case .None:
+    case .Error:                color = COLOR_ERROR
+    case .Highlighted:          color = COLOR_HIGHLIGHTED
+    }
+
+    quoteS := quote ? "\"" : ""
+    fmt.wprintf(w, "%v%v%v%v" + COLOR_RESET, color, quoteS, token.value, quoteS)
 }
 
 printTokens :: proc (w : io.Stream, tokens : []Token) {
@@ -64,13 +49,14 @@ printTokens :: proc (w : io.Stream, tokens : []Token) {
 
 printType :: proc (w : io.Stream, t : Value) {
     switch _ in t {
-    case Flag, []Flag:  io.write_string(w, "flag")
+    case Flag:          io.write_string(w, "flag")
     case u64:           io.write_string(w, "natural number")
     case i64:           io.write_string(w, "whole number")
     case f64:           io.write_string(w, "real number")
     case bool:          io.write_string(w, "boolean value")
     case string:        io.write_string(w, "string")
 
+    case []Flag:        io.write_string(w, "repeating flag")
     case []u64:         io.write_string(w, "list of natural numbers")
     case []i64:         io.write_string(w, "list of whole numbers")
     case []f64:         io.write_string(w, "list of real numbers")
@@ -94,6 +80,13 @@ printArgName :: proc (w : io.Stream, arg : Argument) {
     }
     else {
         fmt.wprintf(w, "<%v>", arg.position)
+    }
+}
+
+printSubcommand :: proc (w : io.Stream, sub : []string) {
+    for s, i in sub {
+        if i != 0 { fmt.wprint(w, " ") }
+        fmt.wprint(w, s)
     }
 }
 
@@ -122,6 +115,7 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
         fmt.wprint(w, "\" is repeated multiple times\n")
 
         p.tokens[e.pos].draw = .Error
+        p.tokens[e.pos - 1].draw = .Error
         p.tokens[e.argument.beginPos].draw = .Highlighted
         
         printTokens(w, p.tokens[:])
@@ -141,7 +135,27 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
 
         printTokens(w, p.tokens[:])
     case Error_UnrecognizedSubcommand:
-        panic("UNIMPLEMENTED")
+        fmt.wprint(w, "ERROR: Unrecognized subcommand \"")
+        printSubcommand(w, e.subcommand)
+        fmt.wprint(w, "\"\n")
+
+        s, ok := parser_findMostSimilarSubcommand(p^, p.subcommand[:])
+        if ok {
+            fmt.wprint(w, "\tClosest match: \"")
+            printSubcommand(w, s)
+            fmt.wprint(w, "\"\n")
+        }
+
+        i := 0
+        for &t in p.tokens {
+            if t.type != .Subcommand { continue }
+            isMatch := ok && i < len(s)
+
+            if isMatch { t.draw = .Highlighted }
+            else       { t.draw = .Error }
+        }
+
+        printTokens(w, p.tokens[:])
     case Error_UnrecognizedSpecialValue:
         fmt.wprint(w, "ERROR: Argument \"")
         printArgName(w, e.argument^)
@@ -166,7 +180,7 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
         printTokens(w, p.tokens[:])
     case Error_ArgumentMissingValue:
         fmt.wprint(w, "ERROR: Argument \"")
-        printArgType(w, e.argument^)
+        printArgName(w, e.argument^)
         fmt.wprint(w, "\" has not been provided a value\n")
 
         p.tokens[e.pos].draw = .Highlighted

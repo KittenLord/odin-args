@@ -5,8 +5,11 @@ import "core:slice"
 import "core:strconv"
 
 
-Flag :: distinct u64
 
+Flag :: distinct u64
+SpecialValue :: distinct string
+
+// TODO: more types (at the very least Special, Path, File, Directory)
 Value :: union {
     Flag,   []Flag,
     bool,   []bool,
@@ -16,16 +19,15 @@ Value :: union {
     string, []string,
 }
 
-SpecialValue :: distinct string
-
 Special :: union($ty : typeid) {
     ty,
     SpecialValue,
 }
 
+
+
 DefaultValue :: distinct Special(Value)
 DefaultList  :: distinct []Special(Value)
-
 // NOTE: using Maybe(Default) makes sense semantically, but because odin is retarded it is redundant
 // as every union has an implicit nil variant. In fact, due to a compiler bug this redundancy directly
 // impacts the user, so we should probably use Default.nil instead of Maybe(Default).nil
@@ -38,41 +40,18 @@ Default :: union {
 
 
 
-/*
+// TODO: it might be useful to set min and max length (possibly unbounded) for a list argument
 
-# Argument <-> store type
+// TODO: we might want an argument type that allows ONLY special values (which is essentially a string type)
 
-{ type = type, required = false, special = nil, default = nil } <-> Maybe(type)
-
-{ type = type, required = false, special = { ... }, default = nil } <-> Maybe(Special(type))
-
-{ type = type, required = true, special = nil, default = nil } <-> type
-{ type = type, required = false, special = nil, default = ... } <-> type
-
-{ type = type, required = true, special = { ... }, default = nil } <-> Special(type)
-{ type = type, required = false, special = { ... }, default = ... } <-> Special(type)
+// TODO: --verbatim flag that allows for positional arguments and argument values starting with '-' (including "--")
+// (I'm actually not sure if "verbatim" is the right word to use, but I like how it sounds)
+// also it should force the value to NOT be a special value, i.e. if we have a string argument with a special value
+// "stdout", providing --verbatim stdout will make it a regular string value
+VERBATIM :: "--verbatim"
 
 
 
-{ type = []type, required = false, special = nil, default = nil } <-> Maybe([]type)
-
-{ type = []type, required = false, special = { ... }, default = nil } <-> Maybe([]Special(type)) 
-
-{ type = []type, required = true, special = nil, default = nil } <-> []type
-{ type = []type, required = false, special = nil, default = { ... } } <-> []type
-
-{ type = []type, required = true, special = { ... }, default = nil } <-> []Special(type)
-{ type = []type, required = false, special = { ... }, default = { ... } } <-> []Special(type)
-
-
-
-# Essentially this boils down to:
-
-If required == false && default == nil -> Maybe
-If special != nil -> Special
-If list and special -> []Special
-
-*/
 
 Argument :: struct {
     // Never changing
@@ -96,6 +75,10 @@ Argument :: struct {
 }
 
 
+
+
+
+
 arg_getValue :: proc (arg : ^Argument, $ty : typeid) -> (ty, bool) {
     // NOTE: Assuming called already typechecked
     if is_just(arg.value) { return arg.value.(ty), true }
@@ -113,8 +96,6 @@ arg_getValueOrAssign :: proc (arg : ^Argument, $ty : typeid, value : ty) -> (ty,
 arg_isOptional :: proc (arg : Argument) -> bool {
     return !arg.required && is_none(arg.default)
 }
-
-
 
 arg_isList :: proc (arg : Argument, valueForFlagArray : bool = true) -> bool {
     switch _ in arg.type {

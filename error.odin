@@ -31,7 +31,7 @@ Error_UnrecognizedArgument :: struct { //
     argument : string,
 }
 
-Error_RequiredArgumentMissing :: struct {
+Error_RequiredArgumentMissing :: struct { //
     argument : ^Argument,
 }
 
@@ -46,10 +46,8 @@ Error_ArgumentMismatchedType :: struct { //
     receivedValue : string,
 }
 
-Error_UnrecognizedSubcommand :: struct {
-    pos : int,
+Error_UnrecognizedSubcommand :: struct { //
     subcommand : []string,
-    unfinished : bool,
 }
 
 Error_UnrecognizedSpecialValue :: struct { //
