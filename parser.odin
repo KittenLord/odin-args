@@ -5,16 +5,27 @@ import "core:slice"
 import "core:strconv"
 import "core:os"
 
+VERBATIM :: "--verbatim"
+DOUBLEDASH :: "--"
+
+DoubleDashBehavior :: enum {
+    EnableVerbatim,
+    StopParsing,
+    Skip,
+    Error,
+}
 
 Parser :: struct {
     // Configuration
-    arguments : []Argument,
+    arguments   : []Argument,
     subcommands : [][]string,
+    doubledash  : DoubleDashBehavior,
 
     // Runtime (mostly)
     tokens : [dynamic]Token,
     index : int,
     errors : [dynamic]Error,
+    verbatim : bool,
 
     pos : int,
     subcommand : [dynamic]string,
@@ -235,7 +246,7 @@ reset :: proc (c : ^Parser) {
 
 
 // TODO: actual errors instead of a boolean (since this is actually user-facing)
-parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok : bool = false) {
+parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (remainder : []string, ok : bool = false) {
     strings := strings
     if skipFirst {
         _, strings = str_pop(c, strings) or_return
@@ -247,13 +258,30 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (ok 
 
     loop: for true {
         s, strings = str_pop(c, strings) or_break loop
-        verbatim := s == VERBATIM
+        verbatim := (s == VERBATIM) || c.verbatim
 
         if s == VERBATIM {
             parser_setLastToken(c, .Verbatim)
         }
         else if str_isArgument(s) {
             parser_setLastToken(c, .Flag)
+        }
+
+        if !verbatim && s == DOUBLEDASH {
+            parser_setLastToken(c, .DoubleDash)
+
+            switch c.doubledash {
+            case .EnableVerbatim:
+                c.verbatim = true
+            case .StopParsing:
+                remainder = strings
+                return
+            case .Skip:
+            case .Error:
+                parser_pushError(c, Error_DoubleDashForbidden{ c.index - 1 })
+            }
+
+            continue loop
         }
 
         for sc in c.subcommands {

@@ -44,12 +44,6 @@ Default :: union {
 
 // TODO: we might want an argument type that allows ONLY special values (which is essentially a string type)
 
-// TODO: --verbatim flag that allows for positional arguments and argument values starting with '-' (including "--")
-// (I'm actually not sure if "verbatim" is the right word to use, but I like how it sounds)
-// also it should force the value to NOT be a special value, i.e. if we have a string argument with a special value
-// "stdout", providing --verbatim stdout will make it a regular string value
-VERBATIM :: "--verbatim"
-
 
 
 

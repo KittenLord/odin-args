@@ -198,7 +198,12 @@ printError :: proc (w : io.Stream, p : ^Parser, error : Error) {
         p.tokens[e.pos].draw = .Highlighted
 
         printTokens(w, p.tokens[:])
+    case Error_DoubleDashForbidden:
+        fmt.wprintfln(w, "ERROR: Doubledash \"--\" usage is forbidden")
 
+        p.tokens[e.pos].draw = .Error
+
+        printTokens(w, p.tokens[:])
     case: panic("bad")
     }
 
