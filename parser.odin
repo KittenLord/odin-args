@@ -161,10 +161,7 @@ parseSingleArgument :: proc (p : ^Parser, arg : ^Argument, s : string, verbatim 
         return
     }
 
-    for sv in arg.special {
-        if verbatim { break }
-        if s != sv { continue }
-
+    if !verbatim && arg_isSpecialValue(arg^, s) {
         if arg_isList(arg^) {
             append(&arg.array, SpecialValue(s))
         }
@@ -245,7 +242,6 @@ reset :: proc (c : ^Parser) {
 
 
 
-// TODO: actual errors instead of a boolean (since this is actually user-facing)
 parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (remainder : []string, ok : bool = false) {
     strings := strings
     if skipFirst {
@@ -334,8 +330,8 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
                         return
                     }
 
-                    if s != VERBATIM && str_isArgument(s) {
-                        // NOTE: we assume that user forgor argument
+                    if s != VERBATIM && str_isArgument(s) && !arg_isSpecialValue(arg, s) {
+                        // NOTE: we assume that user forgor argument, unless it exactly matches special value
                         parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index, s })
                         continue loop
                     }
@@ -399,7 +395,6 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
                 parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
             }
             else {
-                // parser_pushError(c, Error_UnexpectedPositionalArgument{ c.index - 1, s })
                 parser_pushError(c, Error_VerbatimWithoutValue{ c.index - 1 })
             }
         }

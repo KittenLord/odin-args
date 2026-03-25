@@ -93,24 +93,29 @@ arg_isOptional :: proc (arg : Argument) -> bool {
 
 arg_isList :: proc (arg : Argument, valueForFlagArray : bool = true) -> bool {
     switch _ in arg.type {
-    case Flag: return false
-    case []Flag: return valueForFlagArray
-    case bool: return false
-    case []bool: return true
-    case i64: return false
-    case []i64: return true
-    case u64: return false
-    case []u64: return true
-    case f64: return false
-    case []f64: return true
-    case string: return false
-    case []string: return true
+    case Flag:      return false
+    case bool:      return false
+    case i64:       return false
+    case u64:       return false
+    case f64:       return false
+    case string:    return false
+    case []Flag:    return valueForFlagArray
+    case []bool:    return true
+    case []i64:     return true
+    case []u64:     return true
+    case []f64:     return true
+    case []string:  return true
+
     case: panic("bad")
     }
 }
 
 arg_doesAllowSpecialValues :: proc (arg : Argument) -> bool {
     return len(arg.special) > 0
+}
+
+arg_isSpecialValue :: proc (arg : Argument, v : string) -> bool {
+    return slice.any_of(arg.special, v)
 }
 
 arg_isPositionalAt :: proc (arg : Argument, pos : int) -> (ok : bool = false) {
@@ -122,10 +127,6 @@ arg_isType :: proc (arg : Argument, $ty : typeid) -> bool {
     _, ok := arg.type.(ty)
     return ok
 }
-
-str_isArgument :: proc (s : string) -> bool {
-    return len(s) > 0 && s[0] == '-'
-}
         
 arg_fitsSubcommand :: proc (arg : Argument, subcommand : []string) -> bool {
     return slice.has_prefix(subcommand, arg.sub)
@@ -133,4 +134,8 @@ arg_fitsSubcommand :: proc (arg : Argument, subcommand : []string) -> bool {
 
 arg_hasDefault :: proc (arg : Argument) -> bool {
     return is_just(arg.default)
+}
+
+str_isArgument :: proc (s : string) -> bool {
+    return len(s) > 0 && s[0] == '-'
 }
