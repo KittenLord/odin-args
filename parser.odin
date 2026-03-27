@@ -5,7 +5,7 @@ import "core:slice"
 import "core:strconv"
 import "core:os"
 
-VERBATIM :: "--verbatim"
+VERBATIM   :: "--verbatim"
 DOUBLEDASH :: "--"
 
 DoubleDashBehavior :: enum {
@@ -15,10 +15,33 @@ DoubleDashBehavior :: enum {
     Error,
 }
 
+Description :: struct {
+    short   : string,
+    long    : string,
+}
+
+get_description_short :: proc (d : Description) -> string {
+    return d.short != "" ? d.short : d.long
+}
+
+get_description_long :: proc (d : Description) -> string {
+    return d.long != "" ? d.long : d.short
+}
+
+get_description :: proc (d : Description, detailed : bool) -> string {
+    return detailed ? get_description_long(d) : get_description_short(d)
+}
+
+Subcommand :: struct {
+    value       : []string,
+    description : Description,
+}
+
 Parser :: struct {
     // Configuration
+    description : Description,
     arguments   : []Argument,
-    subcommands : [][]string,
+    subcommands : []Subcommand,
     doubledash  : DoubleDashBehavior,
 
     // Runtime (mostly)
@@ -60,6 +83,26 @@ Token :: struct {
 
 
 
+parser_findArgByName :: proc (p : ^Parser, name : string, subcommand : []string = nil) -> ^Argument {
+    for &arg in p.arguments {
+        if !arg_fitsSubcommand(arg, subcommand) { continue }
+        if slice.contains(arg.name, name) { return &arg }
+    }
+
+    return nil
+}
+
+parser_findArgByStore :: proc (p : ^Parser, store : rawptr, subcommand : []string = nil) -> ^Argument {
+    for &arg in p.arguments {
+        if !arg_fitsSubcommand(arg, subcommand) { continue }
+        if arg.store == store { return &arg }
+    }
+
+    return nil
+}
+
+
+
 
 parser_pushError :: proc (p : ^Parser, e : Error) {
     append(&p.errors, e)
@@ -84,25 +127,21 @@ parser_resetDraw :: proc (p : ^Parser) {
     }
 }
 
-parser_hasErrors :: proc (p : Parser) -> bool {
-    return len(p.errors) > 0
-}
-
 parser_findMostSimilarSubcommand :: proc (p : Parser, needle : []string) -> (result : []string, ok : bool = false) {
     length := 0
     candidate : []string
 
     for s in p.subcommands {
-        if slice.equal(s, needle) {
-            result = s
+        if slice.equal(s.value, needle) {
+            result = s.value
             ok = true
             return
         }
 
-        l := slice.prefix_length(s, needle)
+        l := slice.prefix_length(s.value, needle)
         if l > length {
             length = l
-            candidate = s
+            candidate = s.value
         }
     }
 
@@ -283,10 +322,10 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
         for sc in c.subcommands {
             if verbatim { break }
 
-            if !slice.has_prefix(sc, c.subcommand[:]) { continue }
+            if !slice.has_prefix(sc.value, c.subcommand[:]) { continue }
             index := len(c.subcommand)
 
-            if index >= len(sc) || sc[index] != s { continue }
+            if index >= len(sc.value) || sc.value[index] != s { continue }
 
             append(&c.subcommand, s)
 
@@ -483,7 +522,7 @@ terminate :: proc (c : ^Parser) -> bool {
     }
 
     for sub in c.subcommands {
-        if slice.equal(sub, c.subcommand[:]) {
+        if slice.equal(sub.value, c.subcommand[:]) {
             validSubcommand = true
             break
         }

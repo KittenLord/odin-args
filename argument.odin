@@ -59,6 +59,8 @@ Argument :: struct {
 
     store    : rawptr,
 
+    description : Description,
+
 
     // Reset per distinct parse
     provided : bool, // NOTE: false if default
@@ -86,6 +88,10 @@ arg_getValueOrAssign :: proc (arg : ^Argument, $ty : typeid, value : ty) -> (ty,
         return value, false
     }
 }
+
+
+
+
 
 arg_isOptional :: proc (arg : Argument) -> bool {
     return !arg.required && is_none(arg.default)
