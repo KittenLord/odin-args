@@ -32,9 +32,19 @@ get_description :: proc (d : Description, detailed : bool) -> string {
     return detailed ? get_description_long(d) : get_description_short(d)
 }
 
+PrintFlag :: enum {
+    Print,
+    Detailed,
+    Subcommand,
+}
+
+PrintFlags :: bit_set[PrintFlag; u8]
+
 Subcommand :: struct {
     value       : []string,
     description : Description,
+
+    printFlags  : PrintFlags,
 }
 
 Parser :: struct {
@@ -358,6 +368,9 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
                 }
             }
             else if named /* && !verbatim */ {
+                // NOTE: even though we might error below, it's better to consider this as provided for better error reporting and help info
+                arg.provided = true
+
                 parser_setLastToken(c, .Flag)
 
                 if !arg_isType(arg, Flag) {

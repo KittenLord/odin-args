@@ -47,6 +47,7 @@ Default :: union {
 
 
 
+
 Argument :: struct {
     // Never changing
     type     : Value,
@@ -60,14 +61,19 @@ Argument :: struct {
     store    : rawptr,
 
     description : Description,
+    briefFlags  : PrintFlags,
+    overvFlags  : PrintFlags, // NOTE: values of the overridden flags
+    overmFlags  : PrintFlags, // NOTE: which flags are overridden
+
 
 
     // Reset per distinct parse
-    provided : bool, // NOTE: false if default
-    value    : Maybe(Special(Value)),
-    array    : [dynamic]Special(Value),
-    beginPos : int,
-    finalPos : int,
+    provided    : bool, // NOTE: false if default
+    value       : Maybe(Special(Value)),
+    array       : [dynamic]Special(Value),
+    beginPos    : int,
+    finalPos    : int,
+    printFlags  : PrintFlags,
 }
 
 

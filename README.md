@@ -114,6 +114,8 @@ Argument :: struct {
     // additional modifications specified by `required` and `special`
     // Maximal example: `^Maybe([]Special(u64))`
     // Can be nil
+    // EXCEPTIONS:
+    //     - for types Flag and []Flags must be ^Flag regardless of anything else
     store       : rawptr,
 
 

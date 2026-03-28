@@ -3,6 +3,7 @@ package args
 import "core:fmt"
 import "core:io"
 import str "core:strings"
+import "core:slice"
 
 COLOR_VERBATIM          :: "\e[90m"
 COLOR_DOUBLEDASH        :: "\e[1;90m"
@@ -407,8 +408,13 @@ printhelp_text :: proc (w : io.Stream, text : string, offset : int) {
 //     }
 // }
 
-printhelp_argument :: proc (w : io.Stream, arg : Argument, detailed : bool) {
+printhelp_argument :: proc (w : io.Stream, arg : Argument, detailed : bool, subcommand : bool) {
     fmt.wprint(w, "\n" + COLOR_HEADER + "Argument" + COLOR_RESET + " ")
+    if subcommand {
+        fmt.wprint(w, "[")
+        print_subcommand(w, arg.sub)
+        fmt.wprint(w, "]::")
+    }
     print_argFullId(w, arg)
     fmt.wprint(w, ":\n")
 
@@ -445,6 +451,55 @@ printhelp_argument :: proc (w : io.Stream, arg : Argument, detailed : bool) {
     }
 }
 
+printhelp_arguments :: proc (w : io.Stream, p : Parser) {
+    for arg in p.arguments {
+        if .Print not_in arg.printFlags { continue }
+        printhelp_argument(w, arg, .Detailed in arg.printFlags, .Subcommand in arg.printFlags)
+    }
+}
+
+printhelp_argMarkBrief :: proc (p : Parser) {
+    for &arg in p.arguments {
+        arg.printFlags = arg.briefFlags
+    }
+}
+
+printhelp_argMarkSubcommand :: proc (p : Parser, sub : []string, flags : PrintFlags) {
+    for &arg in p.arguments {
+        if !slice.equal(sub, arg.sub) { continue }
+        arg.printFlags = flags
+    }
+}
+
+printhelp_argMarkAll :: proc (p : Parser, flags : PrintFlags) {
+    for &arg in p.arguments {
+        arg.printFlags = flags
+    }
+}
+
+printhelp_argOverride :: proc (p : Parser) {
+    for &arg in p.arguments {
+        for flag in PrintFlag {
+            if flag in arg.overmFlags {
+                if flag in arg.overvFlags {
+                    arg.printFlags -= { flag }
+                }
+                else {
+                    arg.printFlags += { flag }
+                }
+                // NOTE: ????
+                // arg.printFlags[flag] = arg.overvFlags[flag]
+            }
+        }
+    }
+}
+
+printhelp_subMarkAll :: proc (p : Parser, flags : PrintFlags) {
+    for &sub in p.subcommands {
+        sub.printFlags = flags
+    }
+}
+
 printhelp_subcommand :: proc (w : io.Stream, sub : Subcommand, detailed : bool, width : int) {
     fmt.wprint(w, "\nSubcommand [")
     print_subcommand(w, sub.value)
@@ -457,7 +512,7 @@ printhelp_subcommand :: proc (w : io.Stream, sub : Subcommand, detailed : bool, 
     }
 }
 
-printhelp_subcommandsBrief :: proc (w : io.Stream, p : Parser, detailed : bool, width : int) {
+printhelp_brief_subcommands :: proc (w : io.Stream, p : Parser, detailed : bool, width : int) {
     fmt.wprint(w, "\n" + COLOR_HEADER + "Subcommands" + COLOR_RESET + ":\n")
 
     descriptionOffset := 0
@@ -467,37 +522,36 @@ printhelp_subcommandsBrief :: proc (w : io.Stream, p : Parser, detailed : bool, 
     }
 
     for sub, i in p.subcommands {
-        if sub.description.short == "" { continue }
+        if .Print not_in sub.printFlags { continue }
+        desc := get_description(sub.description, detailed)
 
         print_ntimes(w, " ", INDENT)
-
-        // fmt.wprint(w, COLOR_SUBCOMMAND)
         print_subcommand(w, sub.value)
-        // fmt.wprint(w, COLOR_RESET)
 
-        l := print_subcommand_length(sub.value)
+        if desc != "" {
+            l := print_subcommand_length(sub.value)
+            print_ntimes(w, " ", descriptionOffset - l)
+            fmt.wprint(w, " - ")
+            printhelp_text(w, sub.description.short, 0)
+        }
 
-        print_ntimes(w, " ", descriptionOffset - l)
-
-        fmt.wprint(w, " - ")
-
-        printhelp_text(w, sub.description.short, 0)
         fmt.wprint(w, "\n")
-    }
-
-    for arg, i in p.arguments {
-        printhelp_argument(w, arg, detailed)
     }
 }
 
-printhelp_help :: proc (w : io.Stream, p : Parser, detailed : bool, width : int) {
+printhelp_brief :: proc (w : io.Stream, p : Parser, detailed : bool, width : int) {
     printhelp_text(w, get_description(p.description, detailed), 0)
     fmt.wprint(w, "\n")
 
+    printhelp_subMarkAll(p, { .Print })
     for s in p.subcommands {
-        if s.value != nil {
-            printhelp_subcommandsBrief(w, p, detailed, width)
+        if .Print in s.printFlags {
+            printhelp_brief_subcommands(w, p, detailed, width)
             break
         }
     }
+
+    printhelp_argMarkBrief(p)
+    printhelp_arguments(w, p)
+    printhelp_argMarkAll(p, {})
 }
