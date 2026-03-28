@@ -86,3 +86,10 @@ Error :: union {
     Error_VerbatimWithoutValue,
     Error_DoubleDashForbidden,
 }
+
+error_is :: proc ($ty : typeid, e : Error) -> bool {
+    #partial switch _ in e {
+    case ty: return true
+    }
+    return false
+}

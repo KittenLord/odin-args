@@ -368,23 +368,23 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
                 }
             }
             else if named /* && !verbatim */ {
-                // NOTE: even though we might error below, it's better to consider this as provided for better error reporting and help info
-                arg.provided = true
 
                 parser_setLastToken(c, .Flag)
 
-                if !arg_isType(arg, Flag) {
+                if !arg_isFlag(arg) {
                     ok : bool
                     s, ok = str_peek(c, strings)
 
                     if !ok {
                         parser_pushError(c, Error_ArgumentMissingValue{ c.index - 1, &arg })
+                        arg.provided = true
                         return
                     }
 
                     if s != VERBATIM && str_isArgument(s) && !arg_isSpecialValue(arg, s) {
                         // NOTE: we assume that user forgor argument, unless it exactly matches special value
                         parser_pushError(c, Error_DashValueWithoutVerbatim{ c.index, s })
+                        arg.provided = true
                         continue loop
                     }
 
@@ -403,6 +403,7 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
                 s, strings, ok = str_pop(c, strings)
                 if !ok {
                     parser_pushError(c, Error_VerbatimWithoutValue{ c.index - 1 })
+                    arg.provided = true
                     return
                 }
             }
@@ -414,6 +415,9 @@ parse :: proc (c : ^Parser, strings : []string, skipFirst : bool = true) -> (rem
             if positional { parser_setLastToken(c, .PositionalValue) }
 
             _ = parseSingleArgument(c, &arg, s, verbatim)
+
+            // NOTE: even though we might error below, it's better to consider this as provided for better error reporting and help info
+            arg.provided = true
 
             continue loop
         }
@@ -481,6 +485,11 @@ assignMaybe :: proc (store : $pty/^$ty, value : $vty, maybe : bool) {
 
 assignSingle :: proc (arg : Argument, $ty : typeid) {
     value := arg.value.?
+
+    when ty == Flag || ty == []Flag {
+        (cast(^Flag)arg.store)^ = value.(Value).(Flag)
+        return
+    }
 
     if arg_doesAllowSpecialValues(arg) {
         store := cast(^Special(ty))arg.store
@@ -561,15 +570,46 @@ terminate :: proc (c : ^Parser) -> bool {
 
     for arg in c.arguments {
         if arg.store == nil { continue }
+
+        if arg_isFlag(arg) && !arg.provided {
+            (cast(^Flag)arg.store)^ = 0
+            continue
+        }
+
         if (!arg_isList(arg) && is_none(arg.value)) || (arg_isList(arg) && is_none(arg.default) && !arg.provided) {
+            setSingleNil :: proc (ty : Value, store : rawptr, special : bool) {
+                if special {
+                    switch _ in ty {
+                    case bool: (cast(^Maybe(Special(bool)))store)^ = nil
+                    case i64: (cast(^Maybe(Special(i64)))store)^ = nil
+                    case u64: (cast(^Maybe(Special(u64)))store)^ = nil
+                    case f64: (cast(^Maybe(Special(f64)))store)^ = nil
+                    case string: (cast(^Maybe(Special(string)))store)^ = nil
+                    case Flag, []Flag, []bool, []i64, []u64, []f64, []string: panic("bad")
+                    }
+                }
+                else {
+                    switch _ in ty {
+                    case bool: (cast(^Maybe(bool))store)^ = nil
+                    case i64: (cast(^Maybe(i64))store)^ = nil
+                    case u64: (cast(^Maybe(u64))store)^ = nil
+                    case f64: (cast(^Maybe(f64))store)^ = nil
+                    case string: (cast(^Maybe(string))store)^ = nil
+                    case Flag, []Flag, []bool, []i64, []u64, []f64, []string: panic("bad")
+                    }
+                }
+            }
+
             if arg_isList(arg) {
                 (cast(^Maybe([]u8))arg.store)^ = {}
             }
             else if arg_doesAllowSpecialValues(arg) {
-                (cast(^Maybe(Special(u8)))arg.store)^ = {}
+                setSingleNil(arg.type, arg.store, true)
+                // (cast(^Maybe(Special(u8)))arg.store)^ = {}
             }
             else {
-                (cast(^Maybe(u8))arg.store)^ = {}
+                setSingleNil(arg.type, arg.store, false)
+                // (cast(^Maybe(u8))arg.store)^ = {}
             }
 
             continue

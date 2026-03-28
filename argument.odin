@@ -56,7 +56,7 @@ Argument :: struct {
     required : bool,
     special  : []string,
     default  : Maybe(Default),
-    sub      : []string,
+    sub      : []string, // TODO: some arguments might want the subcommand to match exactly?
 
     store    : rawptr,
 
@@ -149,5 +149,14 @@ arg_hasDefault :: proc (arg : Argument) -> bool {
 }
 
 str_isArgument :: proc (s : string) -> bool {
-    return len(s) > 0 && s[0] == '-'
+    _, ok := strconv.parse_f64(s) // NOTE: lmao
+    return !ok && len(s) > 0 && s[0] == '-'
+}
+
+arg_isFlag :: proc (arg : Argument) -> bool {
+    #partial switch _ in arg.type {
+    case Flag, []Flag: return true
+    }
+
+    return false
 }
