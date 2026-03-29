@@ -59,7 +59,10 @@ main :: proc () {
     terminate(&parser)
 
 
-    fmt.println(v_u64, v_i64, v_bool, v_string)
+    // fmt.println(v_u64, v_i64, v_bool, v_string)
 
-    print_errors(os.to_writer(os.stdout), &parser)
+    // print_errors(os.to_writer(os.stdout), &parser)
+
+    printhelp_example(os.to_writer(os.stdout), &parser, "basic usage", { "./program", "--bool", "false" })
+    printhelp_example(os.to_writer(os.stdout), &parser, "basic usage", { "./program", "--bool", "false" })
 }

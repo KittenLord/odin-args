@@ -276,7 +276,11 @@ reset :: proc (c : ^Parser) {
     c.success = true
 
     c.pos = 0
+    c.index = 0
     resize(&c.subcommand, 0)
+    resize(&c.tokens, 0)
+    resize(&c.errors, 0)
+    c.verbatim = false
 
     for &a in c.arguments {
         a.value = {}
@@ -577,6 +581,7 @@ terminate :: proc (c : ^Parser) -> bool {
         }
 
         if (!arg_isList(arg) && is_none(arg.value)) || (arg_isList(arg) && is_none(arg.default) && !arg.provided) {
+            // TODO: this should most probably be moved into assign_ procedures above
             setSingleNil :: proc (ty : Value, store : rawptr, special : bool) {
                 if special {
                     switch _ in ty {
@@ -634,8 +639,7 @@ terminate :: proc (c : ^Parser) -> bool {
             case f64:           assignSingle(arg, f64)
             case string:        assignSingle(arg, string)
 
-            // case:
-            case []bool, []i64, []u64, []f64, []string: panic("bad") // HACK: for some reason `case:` doesn't work? compiler bug?
+            case []bool, []i64, []u64, []f64, []string: panic("bad")
             }
         }
     }

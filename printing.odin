@@ -297,6 +297,27 @@ help text drafting
 // a "--help" vs "--help --help" distinction for less clutter?
 
 
+
+Okay let's actually outline the main reasons why someone would want to read help messages
+
+- Never used the program
+    - Needs rough overview and most useful arguments (brief's function pretty much)
+- Wants to see everything the program's got
+    - Just dump every argument info (subdivided by subcommands)
+- Wants to see roughly what the subcommand is capable of
+    - long subcommand description and most useful arguments
+- Wants to see every argument compatible with a subcommand
+    - long subcommadn description and all detailed arguments
+- Error, needs more information about some arguments
+    - Only really necessary for Error_RequiredArgumentMissing, other errors already give necessary info
+- Wants to see explanations for used arguments and subcommands
+
+The main question really is when should we use detailed description and argument info and when not,
+for some it's obvious and for others less so
+
+
+
+
 # ./program --help
 
 A program that does hopefully useful things
@@ -492,6 +513,19 @@ printhelp_argOverride :: proc (p : Parser) {
             }
         }
     }
+}
+
+printhelp_example :: proc (w : io.Stream, p : ^Parser, text : string, args : []string) {
+    fmt.wprint(w, "\n" + COLOR_HEADER + "Example" + COLOR_RESET + ": ")
+    fmt.wprint(w, text)
+    fmt.wprint(w, "\n")
+
+    reset(p)
+    parse(p, args)
+    print_tokens(w, p.tokens[:])
+    reset(p)
+
+    fmt.wprint(w, "\n")
 }
 
 printhelp_subMarkAll :: proc (p : Parser, flags : PrintFlags) {
